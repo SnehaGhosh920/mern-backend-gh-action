@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Deploy MERN STACK Backend in AWS
+    name: Test Application
     runs-on: ubuntu-latest
 
     steps:
@@ -58,6 +58,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           command_timeout: 10m
+
           script: |
             set -e
 
@@ -70,40 +71,59 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
+            echo "Preparing application directory permissions..."
+            sudo mkdir -p "$APP_DIR"
+            sudo chown -R "$USER:$USER" "$APP_DIR"
+
             if [ -d "$APP_DIR/.git" ]; then
               echo "Repository exists. Pulling latest changes..."
-              cd $APP_DIR
-              git fetch origin $BRANCH
-              git reset --hard origin/$BRANCH
+
+              cd "$APP_DIR"
+
+              git fetch origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
               git clean -fd
+
             else
-              echo "Cloning repository for the first time..."
+              echo "Repository does not exist yet. Preparing application directory..."
+
               if [ -f "$APP_DIR/.env" ]; then
-                cp $APP_DIR/.env /tmp/backend-env-backup
-              fi
-              if [ -f "$APP_DIR/ecosystem.config.js" ]; then
-                cp $APP_DIR/ecosystem.config.js /tmp/backend-ecosystem-backup
+                cp "$APP_DIR/.env" /tmp/backend-env-backup
               fi
 
-              rm -rf $APP_DIR/*
-              git clone --branch $BRANCH --single-branch $REPO_URL $APP_DIR
-              cd $APP_DIR
+              if [ -f "$APP_DIR/ecosystem.config.js" ]; then
+                cp "$APP_DIR/ecosystem.config.js" /tmp/backend-ecosystem-backup
+              fi
+
+              echo "Removing existing application directory..."
+              sudo rm -rf "$APP_DIR"
+
+              echo "Creating application directory..."
+              sudo mkdir -p "$APP_DIR"
+              sudo chown -R "$USER:$USER" "$APP_DIR"
+
+              echo "Cloning repository..."
+              git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
+
+              cd "$APP_DIR"
 
               if [ -f "/tmp/backend-env-backup" ]; then
-                cp /tmp/backend-env-backup $APP_DIR/.env
+                cp /tmp/backend-env-backup "$APP_DIR/.env"
                 rm /tmp/backend-env-backup
               fi
+
               if [ -f "/tmp/backend-ecosystem-backup" ]; then
-                cp /tmp/backend-ecosystem-backup $APP_DIR/ecosystem.config.js
+                cp /tmp/backend-ecosystem-backup "$APP_DIR/ecosystem.config.js"
                 rm /tmp/backend-ecosystem-backup
               fi
             fi
 
             echo "Installing dependencies..."
-            cd $APP_DIR
+            cd "$APP_DIR"
             npm ci --production
 
             echo "Restarting application with PM2..."
+
             if pm2 describe backend-api > /dev/null 2>&1; then
               pm2 reload ecosystem.config.js --env production
             else
@@ -116,6 +136,7 @@ jobs:
             sleep 5
 
             echo "Health check..."
+
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health || echo "000")
 
             if [ "$HTTP_STATUS" = "200" ]; then
