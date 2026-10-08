@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+*.pem
+.DS_Store
+gha-deploy*
